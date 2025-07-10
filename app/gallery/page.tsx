@@ -4,8 +4,24 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
+type CloudinaryImage = {
+  asset_id: string;
+  public_id: string;
+  format: string;
+  version: number;
+  resource_type: string;
+  type: string;
+  created_at: string;
+  bytes: number;
+  width: number;
+  height: number;
+  asset_folder?: string;
+  display_name?: string;
+  url: string;
+  secure_url: string;
+};
+
 export default function GalleryPage() {
-  const [images, setImages] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<"grid" | "masonry">("grid");
@@ -17,57 +33,61 @@ export default function GalleryPage() {
     type: "success" | "error";
   } | null>(null);
 
-useEffect(() => {
-  async function fetchImages() {
-    try {
-      const res = await fetch("/api/upload", {
-        headers: {
-          "x-api-key": process.env.NEXT_PUBLIC_UPLOAD_API_KEY!,
-        },
-      });
-      const data = await res.json();
-      setImages(data.files || []);
-    } catch (err) {
-      console.error("Error fetching images:", err);
-    } finally {
-      setLoading(false);
+  // ✅ Use proper type
+  const [images, setImages] = useState<CloudinaryImage[]>([]);
+
+  // ✅ Fetch images
+  useEffect(() => {
+    async function fetchImages() {
+      try {
+        const res = await fetch("/api/upload", {
+          headers: {
+            "x-api-key": process.env.NEXT_PUBLIC_UPLOAD_API_KEY!,
+          },
+        });
+        const data = await res.json();
+        setImages(data.files || []);
+      } catch (err) {
+        console.error("Error fetching images:", err);
+      } finally {
+        setLoading(false);
+      }
     }
-  }
 
-  fetchImages();
-}, []);
+    fetchImages();
+  }, []);
 
-
-  const deleteImage = async (filename: string) => {
-    setDeletingImage(filename);
+  const deleteImage = async (public_id: string) => {
+    setDeletingImage(public_id);
     setImageToDelete(null);
 
     try {
       const res = await fetch("/api/upload", {
         method: "DELETE",
-        headers: { "Content-Type": "application/json", "x-api-key": process.env.NEXT_PUBLIC_UPLOAD_API_KEY! },
-
-        body: JSON.stringify({ filename }),
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.NEXT_PUBLIC_UPLOAD_API_KEY!,
+        },
+        body: JSON.stringify({ public_id }),
       });
 
       if (res.ok) {
-        // Start fade out animation
-        setFadingImage(filename);
+        setFadingImage(public_id);
         setNotification({
           message: "Image deleted successfully",
           type: "success",
         });
-
-        // After animation completes, remove from state
         setTimeout(() => {
-          setImages((prev) => prev.filter((f) => f !== filename));
+          setImages((prev) =>
+            prev.filter((img) => img.public_id !== public_id)
+          );
           setFadingImage(null);
         }, 500);
       } else {
         setNotification({ message: "Failed to delete image", type: "error" });
       }
-    } catch (error) {
-      console.error("Error deleting image:", error);
+    } catch (err) {
+      console.error("Error deleting image:", err);
       setNotification({ message: "Failed to delete image", type: "error" });
     } finally {
       setDeletingImage(null);
@@ -235,14 +255,14 @@ useEffect(() => {
             >
               {images.map((img, index) => (
                 <ImageCard
-                  key={img}
+                  key={img.public_id}
                   image={img}
                   index={index}
                   viewMode={viewMode}
-                  onClick={() => openLightbox(img)}
-                  onDelete={() => openDeleteModal(img)}
-                  isDeleting={deletingImage === img}
-                  isFading={fadingImage === img}
+                  onClick={() => openLightbox(img.secure_url)}
+                  onDelete={() => openDeleteModal(img.public_id)}
+                  isDeleting={deletingImage === img.public_id}
+                  isFading={fadingImage === img.public_id}
                 />
               ))}
             </div>
@@ -424,7 +444,9 @@ function DeleteModal({
             </div>
             <div>
               <h3 className="text-xl font-semibold text-white">Delete Image</h3>
-              <p className="text-white/60 text-sm">This action cannot be undone</p>
+              <p className="text-white/60 text-sm">
+                This action cannot be undone
+              </p>
             </div>
           </div>
 
@@ -468,7 +490,7 @@ function ImageCard({
   isDeleting,
   isFading,
 }: {
-  image: string;
+  image: CloudinaryImage;
   index: number;
   viewMode: "grid" | "masonry";
   onClick: () => void;
@@ -500,7 +522,6 @@ function ImageCard({
       }}
     >
       <div className="relative overflow-hidden">
-        {/* Delete Button */}
         <button
           onClick={handleDelete}
           disabled={isDeleting}
@@ -526,8 +547,8 @@ function ImageCard({
         </button>
 
         <Image
-          src={`/uploads/${image}`}
-          alt={image}
+          src={image.secure_url}
+          alt={image.public_id}
           className={`w-full h-full object-cover transition-all duration-300 group-hover:scale-110 ${
             imageLoaded ? "opacity-100" : "opacity-0"
           }`}
@@ -541,37 +562,6 @@ function ImageCard({
             <div className="w-8 h-8 border-2 border-white/30 border-t-white rounded-full animate-spin"></div>
           </div>
         )}
-
-        {/* Overlay */}
-        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300">
-          <div className="absolute bottom-0 left-0 right-0 p-4">
-            <p className="text-white text-sm font-medium truncate mb-1">
-              {image}
-            </p>
-            <div className="flex items-center gap-2 text-white/80 text-xs">
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-              >
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"
-                />
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z"
-                />
-              </svg>
-              Click to view
-            </div>
-          </div>
-        </div>
       </div>
     </div>
   );
@@ -681,8 +671,8 @@ const style = `
 }
 `;
 
-if (typeof document !== 'undefined') {
-  const styleSheet = document.createElement('style');
+if (typeof document !== "undefined") {
+  const styleSheet = document.createElement("style");
   styleSheet.textContent = style;
   document.head.appendChild(styleSheet);
 }
