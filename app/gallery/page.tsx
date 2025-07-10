@@ -4,21 +4,13 @@ import { useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
-type CloudinaryImage = {
-  asset_id: string;
-  public_id: string;
-  format: string;
-  version: number;
-  resource_type: string;
-  type: string;
-  created_at: string;
-  bytes: number;
-  width: number;
-  height: number;
-  asset_folder?: string;
-  display_name?: string;
+type ImageKitFile = {
+  fileId: string;
+  name: string;
   url: string;
-  secure_url: string;
+  thumbnailUrl?: string;
+  height?: number;
+  width?: number;
 };
 
 export default function GalleryPage() {
@@ -34,7 +26,7 @@ export default function GalleryPage() {
   } | null>(null);
 
   // ✅ Use proper type
-  const [images, setImages] = useState<CloudinaryImage[]>([]);
+  const [images, setImages] = useState<ImageKitFile[]>([]);
 
   // ✅ Fetch images
   useEffect(() => {
@@ -46,7 +38,7 @@ export default function GalleryPage() {
           },
         });
         const data = await res.json();
-        setImages(data.files || []);
+        setImages(data.files || []); // `files` should come from ImageKit API format
       } catch (err) {
         console.error("Error fetching images:", err);
       } finally {
@@ -57,8 +49,8 @@ export default function GalleryPage() {
     fetchImages();
   }, []);
 
-  const deleteImage = async (public_id: string) => {
-    setDeletingImage(public_id);
+  const deleteImage = async (fileId: string) => {
+    setDeletingImage(fileId);
     setImageToDelete(null);
 
     try {
@@ -68,19 +60,17 @@ export default function GalleryPage() {
           "Content-Type": "application/json",
           "x-api-key": process.env.NEXT_PUBLIC_UPLOAD_API_KEY!,
         },
-        body: JSON.stringify({ public_id }),
+        body: JSON.stringify({ fileId }),
       });
 
       if (res.ok) {
-        setFadingImage(public_id);
+        setFadingImage(fileId);
         setNotification({
           message: "Image deleted successfully",
           type: "success",
         });
         setTimeout(() => {
-          setImages((prev) =>
-            prev.filter((img) => img.public_id !== public_id)
-          );
+          setImages((prev) => prev.filter((img) => img.fileId !== fileId));
           setFadingImage(null);
         }, 500);
       } else {
@@ -255,14 +245,14 @@ export default function GalleryPage() {
             >
               {images.map((img, index) => (
                 <ImageCard
-                  key={img.public_id}
+                  key={img.fileId ?? index}
                   image={img}
                   index={index}
                   viewMode={viewMode}
-                  onClick={() => openLightbox(img.secure_url)}
-                  onDelete={() => openDeleteModal(img.public_id)}
-                  isDeleting={deletingImage === img.public_id}
-                  isFading={fadingImage === img.public_id}
+                  onClick={() => openLightbox(img.url)}
+                  onDelete={() => openDeleteModal(img.fileId)}
+                  isDeleting={deletingImage === img.fileId}
+                  isFading={fadingImage === img.fileId}
                 />
               ))}
             </div>
@@ -413,6 +403,11 @@ function DeleteModal({
   onConfirm: () => void;
   onCancel: () => void;
 }) {
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+
+  const SECRET_PIN = "1234";
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") onCancel();
@@ -421,11 +416,20 @@ function DeleteModal({
     return () => document.removeEventListener("keydown", handleEscape);
   }, [onCancel]);
 
+  const handleDelete = () => {
+    if (pin === SECRET_PIN) {
+      setError("");
+      onConfirm();
+    } else {
+      setError("Invalid PIN. Try again.");
+    }
+  };
+
   return (
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white/10 backdrop-blur-md rounded-2xl border border-white/20 max-w-md w-full mx-4 animate-modal-in">
         <div className="p-6">
-          {/* Modal Header */}
+          {/* Header */}
           <div className="flex items-center gap-3 mb-4">
             <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center">
               <svg
@@ -445,22 +449,30 @@ function DeleteModal({
             <div>
               <h3 className="text-xl font-semibold text-white">Delete Image</h3>
               <p className="text-white/60 text-sm">
-                This action cannot be undone
+                Enter the secret PIN to confirm
               </p>
             </div>
           </div>
 
-          {/* Modal Body */}
-          <div className="mb-6">
-            <p className="text-white/80 mb-3">
-              Are you sure you want to delete this image?
-            </p>
-            <div className="bg-white/5 rounded-lg p-3 border border-white/10">
-              <p className="text-white font-medium text-sm truncate">{image}</p>
+          {/* Body */}
+          <div className="mb-4">
+            <p className="text-white/80 mb-3">This action is irreversible.</p>
+            <div className="bg-white/5 rounded-lg p-3 border border-white/10 text-white truncate mb-2">
+              {image}
             </div>
+            <input
+              type="password"
+              value={pin}
+              onChange={(e) => setPin(e.target.value)}
+              placeholder="Enter Secret PIN"
+              className="w-full px-4 py-2 bg-white/5 border border-white/10 rounded-lg text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-2"
+            />
+            {error && (
+              <p className="text-red-400 text-sm font-medium">{error}</p>
+            )}
           </div>
 
-          {/* Modal Actions */}
+          {/* Footer */}
           <div className="flex gap-3">
             <button
               onClick={onCancel}
@@ -469,10 +481,10 @@ function DeleteModal({
               Cancel
             </button>
             <button
-              onClick={onConfirm}
+              onClick={handleDelete}
               className="flex-1 px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded-lg transition-colors duration-200 font-medium"
             >
-              Delete
+              Confirm Delete
             </button>
           </div>
         </div>
@@ -490,7 +502,7 @@ function ImageCard({
   isDeleting,
   isFading,
 }: {
-  image: CloudinaryImage;
+  image: ImageKitFile;
   index: number;
   viewMode: "grid" | "masonry";
   onClick: () => void;
@@ -547,8 +559,8 @@ function ImageCard({
         </button>
 
         <Image
-          src={image.secure_url}
-          alt={image.public_id}
+          src={image.url}
+          alt={image.name}
           className={`w-full h-full object-cover transition-all duration-300 group-hover:scale-110 ${
             imageLoaded ? "opacity-100" : "opacity-0"
           }`}
@@ -599,8 +611,8 @@ function Lightbox({ image, onClose }: { image: string; onClose: () => void }) {
         </button>
 
         <Image
-          src={`/uploads/${image}`}
-          alt={image}
+          src={image}
+          alt="Expanded"
           className="max-w-full max-h-full object-contain rounded-lg"
           width={1200}
           height={800}

@@ -1,34 +1,25 @@
-import { v2 as cloudinary } from "cloudinary";
 import { NextRequest, NextResponse } from "next/server";
-import { Readable } from "stream";
+import ImageKit from "imagekit";
+
+export const runtime = "nodejs";
 
 const API_KEY = process.env.UPLOAD_API_KEY;
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME!,
-  api_key: process.env.CLOUDINARY_API_KEY!,
-  api_secret: process.env.CLOUDINARY_API_SECRET!,
+const imagekit = new ImageKit({
+  publicKey: process.env.IMAGEKIT_PUBLIC_KEY!,
+  privateKey: process.env.IMAGEKIT_PRIVATE_KEY!,
+  urlEndpoint: process.env.IMAGEKIT_URL_ENDPOINT!,
 });
 
-function bufferToStream(buffer: Buffer) {
-  const readable = new Readable();
-  readable.push(buffer);
-  readable.push(null);
-  return readable;
-}
-
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*", // 🔐 Restrict in production
+  "Access-Control-Allow-Origin": "*", // 🔐 restrict in production
   "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, x-api-key",
 };
 
 async function handler(req: NextRequest) {
   if (req.method === "OPTIONS") {
-    return new NextResponse(null, {
-      status: 204,
-      headers: corsHeaders,
-    });
+    return new NextResponse(null, { status: 204, headers: corsHeaders });
   }
 
   const apiKey = req.headers.get("x-api-key");
@@ -55,76 +46,39 @@ async function handler(req: NextRequest) {
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        const result = await new Promise((resolve, reject) => {
-          const uploadStream = cloudinary.uploader.upload_stream(
-            { folder: "uploads" },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
-            }
-          );
-          bufferToStream(buffer).pipe(uploadStream);
+        const uploadRes = await imagekit.upload({
+          file: buffer,
+          fileName: file.name,
+          folder: "/uploads",
         });
 
         return NextResponse.json(
-          { success: true, data: result },
+          { success: true, data: uploadRes },
           { headers: corsHeaders }
         );
       }
 
       case "GET": {
-        try {
-          const result = await cloudinary.api.resources({
-            type: "upload",
-            prefix: "uploads/",
-            max_results: 50,
-          });
+        const files = await imagekit.listFiles({
+          path: "/uploads",
+          limit: 50,
+        });
 
-          return NextResponse.json(
-            { files: result.resources },
-            { headers: corsHeaders }
-          );
-        } catch (err: unknown) {
-          const error = err instanceof Error ? err : new Error(String(err));
-
-          if (
-            typeof error === "object" &&
-            error !== null &&
-            "http_code" in error &&
-            (error as { http_code?: number }).http_code === 420
-          ) {
-            return NextResponse.json(
-              {
-                error: "Rate Limit Exceeded",
-                message:
-                  "Cloudinary daily API limit exceeded. Please try again after 09:00 UTC.",
-              },
-              { status: 429, headers: corsHeaders }
-            );
-          }
-
-          return NextResponse.json(
-            {
-              error: "Failed to fetch files",
-              details: error.message,
-            },
-            { status: 500, headers: corsHeaders }
-          );
-        }
+        return NextResponse.json({ files }, { headers: corsHeaders });
       }
 
       case "DELETE": {
         const body = await req.json();
-        const { public_id } = body;
+        const { fileId } = body;
 
-        if (!public_id) {
+        if (!fileId) {
           return NextResponse.json(
-            { error: "public_id is required" },
+            { error: "fileId is required" },
             { status: 400, headers: corsHeaders }
           );
         }
 
-        const res = await cloudinary.uploader.destroy(public_id);
+        const res = await imagekit.deleteFile(fileId);
         return NextResponse.json(
           { success: true, message: "Deleted successfully", result: res },
           { headers: corsHeaders }
@@ -139,10 +93,9 @@ async function handler(req: NextRequest) {
     }
   } catch (err: unknown) {
     const error = err instanceof Error ? err : new Error(String(err));
-
     return NextResponse.json(
       {
-        error: "Unexpected server error",
+        error: "Server error",
         details: error.message,
       },
       { status: 500, headers: corsHeaders }
