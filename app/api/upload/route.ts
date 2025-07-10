@@ -64,7 +64,19 @@ async function handler(req: NextRequest) {
           limit: 50,
         });
 
-        return NextResponse.json({ files }, { headers: corsHeaders });
+        return NextResponse.json(
+          { files },
+          {
+            headers: {
+              ...corsHeaders,
+              "Cache-Control":
+                "no-store, no-cache, must-revalidate, proxy-revalidate",
+              Pragma: "no-cache",
+              Expires: "0",
+              "Surrogate-Control": "no-store",
+            },
+          }
+        );
       }
 
       case "DELETE": {
