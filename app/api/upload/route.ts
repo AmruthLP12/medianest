@@ -17,11 +17,28 @@ function bufferToStream(buffer: Buffer) {
   return readable;
 }
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*", // ← restrict this in production
+  "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
+  "Access-Control-Allow-Headers": "Content-Type, x-api-key",
+};
+
 async function handler(req: NextRequest) {
+  // Handle CORS preflight
+  if (req.method === "OPTIONS") {
+    return new NextResponse(null, {
+      status: 204,
+      headers: corsHeaders,
+    });
+  }
+
   // ✅ Validate API Key
   const apiKey = req.headers.get("x-api-key");
   if (apiKey !== API_KEY) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "Unauthorized" }, {
+      status: 401,
+      headers: corsHeaders,
+    });
   }
 
   const method = req.method;
@@ -32,7 +49,10 @@ async function handler(req: NextRequest) {
       const file = formData.get("file") as File;
 
       if (!file) {
-        return NextResponse.json({ error: "No file uploaded." }, { status: 400 });
+        return NextResponse.json({ error: "No file uploaded." }, {
+          status: 400,
+          headers: corsHeaders,
+        });
       }
 
       const arrayBuffer = await file.arrayBuffer();
@@ -53,9 +73,12 @@ async function handler(req: NextRequest) {
         return NextResponse.json({
           success: true,
           data: result,
-        });
+        }, { headers: corsHeaders });
       } catch (err) {
-        return NextResponse.json({ error: "Upload failed", details: err }, { status: 500 });
+        return NextResponse.json({ error: "Upload failed", details: err }, {
+          status: 500,
+          headers: corsHeaders,
+        });
       }
     }
 
@@ -67,9 +90,14 @@ async function handler(req: NextRequest) {
           max_results: 50,
         });
 
-        return NextResponse.json({ files: result.resources });
+        return NextResponse.json({ files: result.resources }, {
+          headers: corsHeaders,
+        });
       } catch (err) {
-        return NextResponse.json({ error: "Failed to fetch files", details: err }, { status: 500 });
+        return NextResponse.json({ error: "Failed to fetch files", details: err }, {
+          status: 500,
+          headers: corsHeaders,
+        });
       }
     }
 
@@ -79,20 +107,31 @@ async function handler(req: NextRequest) {
         const { public_id } = body;
 
         if (!public_id) {
-          return NextResponse.json({ error: "public_id is required" }, { status: 400 });
+          return NextResponse.json({ error: "public_id is required" }, {
+            status: 400,
+            headers: corsHeaders,
+          });
         }
 
         await cloudinary.uploader.destroy(public_id);
 
-        return NextResponse.json({ success: true, message: "Deleted successfully" });
+        return NextResponse.json({ success: true, message: "Deleted successfully" }, {
+          headers: corsHeaders,
+        });
       } catch (err) {
-        return NextResponse.json({ error: "Failed to delete file", details: err }, { status: 500 });
+        return NextResponse.json({ error: "Failed to delete file", details: err }, {
+          status: 500,
+          headers: corsHeaders,
+        });
       }
     }
 
     default:
-      return NextResponse.json({ error: "Method Not Allowed" }, { status: 405 });
+      return NextResponse.json({ error: "Method Not Allowed" }, {
+        status: 405,
+        headers: corsHeaders,
+      });
   }
 }
 
-export { handler as GET, handler as POST, handler as DELETE };
+export { handler as GET, handler as POST, handler as DELETE, handler as OPTIONS };
